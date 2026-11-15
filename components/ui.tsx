@@ -11,6 +11,8 @@ export const COLOR = {
   navy: "#0b1d3a",
   navy2: "#10284d",
   rojo: "#b3151c",
+  granate: "#6e0b24", // logo de Field Shift
+  dorado: "#e8a816", // logo de Field Shift
   favorable: "#2e9d4f",
   caution: "#e3b505",
   risk: "#d0312d",
