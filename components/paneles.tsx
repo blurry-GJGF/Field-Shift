@@ -161,7 +161,7 @@ export function PanelAgua({
 }: {
   clima: Clima;
   mes: number;
-  riego: { mm: number; temporada: string } | null;
+  riego: { mm: number; texto: string } | null;
 }) {
   const anual = clima.reduce((s, m) => s + m.lluvia, 0);
   const humedo = clima.reduce((best, m, i) => (m.lluvia > clima[best].lluvia ? i : best), 0);
@@ -191,7 +191,7 @@ export function PanelAgua({
         <p className="text-sm">
           {riego ? (
             <>
-              💧 Irrigated: <b>{riego.mm} mm</b> per year in <b>{riego.temporada}</b>.
+              💧 Irrigated: you can water your next crop <b>{riego.texto.toLowerCase()}</b> (≈ {riego.mm} mm).
             </>
           ) : (
             <>🌧️ Rainfed: your crops depend only on rain.</>
