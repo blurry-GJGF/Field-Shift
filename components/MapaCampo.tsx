@@ -274,7 +274,7 @@ export default function MapaCampo() {
         {/* Logo de Field Shift: ícono + texto hecho en código (para que se vea nítido). */}
         <div className="flex items-center gap-3">
           <Image
-            src="/field-shift-icon.png"
+            src={`${process.env.NEXT_PUBLIC_BASE_PATH}/field-shift-icon.png`}
             alt=""
             width={500}
             height={500}
