@@ -271,25 +271,37 @@ export default function MapaCampo() {
     <div className="flex min-h-dvh flex-col bg-[#eef1f5] text-gray-900 md:h-dvh">
       {/* ── Encabezado ───────────────────────────────────────────── */}
       <header className="flex flex-wrap items-center justify-between gap-2 px-4 py-2 text-white" style={{ background: COLOR.navy }}>
-        {/* Logo oficial de NASA Space Apps (kit de marca para participantes:
-            https://www.spaceappschallenge.org/brand/), versión para fondo oscuro. */}
-        <Image
-          src="/space-apps-logo.svg"
-          alt="NASA Space Apps Challenge"
-          width={561}
-          height={221}
-          priority
-          unoptimized
-          className="h-14 w-auto sm:h-16"
-        />
+        {/* Logo de Field Shift: ícono + texto hecho en código (para que se vea nítido). */}
+        <div className="flex items-center gap-3">
+          <Image
+            src="/field-shift-icon.png"
+            alt=""
+            width={500}
+            height={500}
+            priority
+            unoptimized
+            className="h-14 w-14 sm:h-16 sm:w-16"
+          />
+          <div className="leading-none">
+            <p className="text-3xl font-black italic tracking-tight sm:text-4xl">FIELD SHIFT</p>
+            <div className="mt-1 flex items-center gap-1">
+              <span className="h-1.5 flex-1 rounded-full" style={{ background: COLOR.granate }} />
+              {[0, 1, 2].map((i) => (
+                <span key={i} className="h-1.5 w-2.5 -skew-x-[30deg]" style={{ background: COLOR.dorado }} />
+              ))}
+            </div>
+            <p className="mt-1 text-[11px] font-bold italic tracking-wide sm:text-sm">ADAPTING FARMS WITH NASA DATA</p>
+          </div>
+        </div>
         <div className="text-right text-xs sm:text-sm">
           <p className="font-bold">{fechaBonita(ahora)}</p>
           <p>Current Region: {region}</p>
           <p className="italic opacity-80">NASA POWER · 25-year monthly averages</p>
         </div>
       </header>
-      <div className="bg-black px-4 py-1.5 text-lg font-bold text-white sm:text-2xl">
-        Field Shift: Adapting Farms with NASA Data
+      <div className="flex items-center justify-between bg-black px-4 py-1 text-sm text-white">
+        <span className="font-semibold">NASA Space Apps Challenge 2026</span>
+        <span className="hidden opacity-75 sm:inline">Decision support for crop rotation</span>
       </div>
 
       <div className="flex flex-1 flex-col md:min-h-0 md:flex-row">
