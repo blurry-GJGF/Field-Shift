@@ -303,7 +303,7 @@ function Prioridad({
             aria-checked={valor === i}
             aria-label={textos[i]}
             onClick={() => onChange(valor === i ? i - 1 : i)}
-            className={`h-4 w-4 rounded-full border-2 ${i <= valor ? "border-[#b3151c] bg-[#b3151c]" : "border-gray-300 bg-white hover:border-[#b3151c]"}`}
+            className={`h-5 w-5 rounded-full border-2 md:h-4 md:w-4 ${i <= valor ? "border-[#b3151c] bg-[#b3151c]" : "border-gray-300 bg-white hover:border-[#b3151c]"}`}
           />
         ))}
       </div>

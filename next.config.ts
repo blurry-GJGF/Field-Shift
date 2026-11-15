@@ -14,7 +14,7 @@ const nextConfig: NextConfig = {
   images: { unoptimized: true },
   // En desarrollo Next sólo sirve sus archivos JS a "localhost". Para abrir la
   // app con la IP de "Network" (o desde otro equipo de la red) hay que permitirla aquí.
-  allowedDevOrigins: ["192.168.*.*"],
+  allowedDevOrigins: ["192.168.*.*", "10.*.*.*"],
   // (Se quitaron cacheComponents y partialPrefetching: necesitan servidor y no
   // funcionan en un sitio estático. Esta app hace todo en el navegador.)
   turbopack: {

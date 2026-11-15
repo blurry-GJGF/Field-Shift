@@ -1,6 +1,7 @@
 // Piezas visuales compartidas por los paneles.
 import type { ReactNode } from "react";
-import type { obtenerClima, rankear } from "@/lib/ranking";
+import type { obtenerClima } from "@/lib/nasa/power";
+import type { rankear } from "@/lib/ranking";
 
 export type Clima = Awaited<ReturnType<typeof obtenerClima>>;
 export type Formulario = Parameters<typeof rankear>[0];
