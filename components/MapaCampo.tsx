@@ -15,68 +15,13 @@ import Point from "ol/geom/Point";
 import { Style, Circle, Fill, Stroke } from "ol/style";
 import { fromLonLat, toLonLat } from "ol/proj";
 import "ol/ol.css";
-import { obtenerClima, rankear } from "@/lib/ranking";
+import { CAPAS_NASA, buscarImagenHls, fechaReciente, urlGibs, type CapaNasa, type ImagenHls } from "@/lib/nasa/gibs";
+import { obtenerClima, resumenPeriodo } from "@/lib/nasa/power";
+import { rankear } from "@/lib/ranking";
+import { REGIONES } from "@/lib/regiones";
 import { PanelAgua, PanelSuelo, PanelTemperatura } from "./paneles";
 import { NIVELES_RIEGO, PanelRotacion, nivelRiego } from "./PanelRotacion";
 import { COLOR, type Clima, type Respuestas } from "./ui";
-
-// ── Capas de NASA GIBS (sin registro) ───────────────────────────────────
-const GIBS = "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best";
-const urlGibs = (capa: string, fecha: string | null, nivel: number, ext: string) =>
-  `${GIBS}/${capa}/default/${fecha ? `${fecha}/` : ""}GoogleMapsCompatible_Level${nivel}/{z}/{y}/{x}.${ext}`;
-
-const CAPAS_NASA = {
-  ninguna: { nombre: "No layer", capa: null, ext: "", opacidad: 1 },
-  // Imagen satelital del día (MODIS Terra, 250 m). Encima se pone HLS (30 m) cuando hay.
-  color: { nombre: "True color", capa: "MODIS_Terra_CorrectedReflectance_TrueColor", ext: "jpg", opacidad: 1 },
-  // Índice de vegetación (MODIS Terra, compuesto de 8 días, 250 m)
-  ndvi: { nombre: "Vegetation (NDVI)", capa: "MODIS_Terra_NDVI_8Day", ext: "png", opacidad: 1 },
-} as const;
-type CapaNasa = keyof typeof CAPAS_NASA;
-
-// Fecha de hace 2 días: la imagen más reciente que GIBS suele tener completa.
-const fechaReciente = () => new Date(Date.now() - 2 * 86_400_000).toISOString().slice(0, 10);
-
-// ── HLS (Landsat + Sentinel-2 armonizados, 30 m) ───────────────────────
-// Cada fecha sólo cubre parte del mundo, así que buscamos la imagen más reciente
-// que tenga datos en el punto elegido (revisando un mosaico de zoom 10).
-const HLS = ["HLS_S30_Nadir_BRDF_Adjusted_Reflectance", "HLS_L30_Nadir_BRDF_Adjusted_Reflectance"] as const;
-type ImagenHls = { fecha: string; producto: (typeof HLS)[number] };
-
-async function buscarImagenHls(lat: number, lon: number, hasta: string, dias = 24): Promise<ImagenHls | null> {
-  const n = 2 ** 10;
-  const x = Math.floor(((lon + 180) / 360) * n);
-  const rad = (lat * Math.PI) / 180;
-  const y = Math.floor(((1 - Math.log(Math.tan(rad) + 1 / Math.cos(rad)) / Math.PI) / 2) * n);
-  const fin = new Date(`${hasta}T12:00:00Z`).getTime();
-  const fechas = Array.from({ length: dias }, (_, i) => new Date(fin - i * 86_400_000).toISOString().slice(0, 10));
-
-  const pruebas = await Promise.all(
-    fechas.flatMap((fecha) =>
-      HLS.map(async (producto) => {
-        try {
-          const r = await fetch(`${GIBS}/${producto}/default/${fecha}/GoogleMapsCompatible_Level12/10/${y}/${x}.png`);
-          // Un mosaico vacío pesa unos cientos de bytes; uno con imagen, decenas de KB.
-          return r.ok && (await r.blob()).size > 20_000 ? { fecha, producto } : null;
-        } catch {
-          return null;
-        }
-      }),
-    ),
-  );
-  return pruebas.find((p) => p !== null) ?? null; // ya vienen de la más reciente a la más vieja
-}
-
-// Principales zonas agrícolas de Sonora (distritos de riego). Coordenadas aproximadas
-// del centro agrícola de cada zona.
-const REGIONES = [
-  { nombre: "Valle del Yaqui", lugar: "Cd. Obregón", lat: 27.49, lon: -109.93 },
-  { nombre: "Valle del Mayo", lugar: "Navojoa · Huatabampo", lat: 26.95, lon: -109.55 },
-  { nombre: "Costa de Hermosillo", lugar: "Miguel Alemán", lat: 28.85, lon: -111.45 },
-  { nombre: "Valle de Guaymas", lugar: "Guaymas · Empalme", lat: 28.0, lon: -110.75 },
-  { nombre: "Caborca", lugar: "Pitiquito · Altar", lat: 30.72, lon: -112.16 },
-  { nombre: "San Luis Río Colorado", lugar: "Valle de SLRC", lat: 32.45, lon: -114.77 },
-];
 
 type Vista = "temperatura" | "agua" | "suelo" | "rotacion";
 const VISTAS: { id: Vista; nombre: string; icono: string; sub?: string }[] = [
@@ -119,6 +64,8 @@ export default function MapaCampo() {
   const [ahora, setAhora] = useState(hoy);
   const [verAviso, setVerAviso] = useState(true);
   const [hlsRes, setHlsRes] = useState<{ clave: string; imagen: ImagenHls | null } | null>(null);
+  const [ubicando, setUbicando] = useState(false);
+  const [avisoUbicacion, setAvisoUbicacion] = useState<string | null>(null);
 
   const cambiar = <K extends keyof Respuestas>(clave: K, valor: Respuestas[K]) =>
     setResp((r) => ({ ...r, [clave]: valor }));
@@ -252,10 +199,38 @@ export default function MapaCampo() {
     mapRef.current?.getView().animate({ center: fromLonLat([p.lon, p.lat]), zoom: 10, duration: 600 });
   };
 
-  const miUbicacion = () =>
-    navigator.geolocation?.getCurrentPosition((pos) =>
-      irA({ lat: +pos.coords.latitude.toFixed(2), lon: +pos.coords.longitude.toFixed(2), nombre: "My location" }),
+  // En el celular la ubicación sólo funciona con HTTPS (o en localhost). Si la página
+  // se abre con http://192.168.x.x el navegador la bloquea, así que avisamos en vez de
+  // fallar en silencio.
+  const miUbicacion = () => {
+    setAvisoUbicacion(null);
+    if (!window.isSecureContext) {
+      setAvisoUbicacion("Location needs a secure connection (https://). Open the site with HTTPS to use it on your phone.");
+      return;
+    }
+    if (!("geolocation" in navigator)) {
+      setAvisoUbicacion("This browser does not support location.");
+      return;
+    }
+    setUbicando(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setUbicando(false);
+        irA({ lat: +pos.coords.latitude.toFixed(2), lon: +pos.coords.longitude.toFixed(2), nombre: "My location" });
+      },
+      (err) => {
+        setUbicando(false);
+        setAvisoUbicacion(
+          err.code === err.PERMISSION_DENIED
+            ? "Location permission denied. Allow it in your browser and phone settings, then try again."
+            : err.code === err.TIMEOUT
+              ? "Getting your location took too long. Check that GPS is on and try again."
+              : "Could not get your location. Try again.",
+        );
+      },
+      { enableHighAccuracy: true, timeout: 15_000, maximumAge: 60_000 },
     );
+  };
 
   // El ranking usa la fecha de cuando se abrió la página (el reloj de arriba sí avanza).
   const resultado = useMemo(
@@ -280,26 +255,28 @@ export default function MapaCampo() {
           height={221}
           priority
           unoptimized
-          className="h-14 w-auto sm:h-16"
+          className="h-10 w-auto sm:h-16"
         />
         <div className="text-right text-xs sm:text-sm">
           <p className="font-bold">{fechaBonita(ahora)}</p>
           <p>Current Region: {region}</p>
-          <p className="italic opacity-80">NASA POWER · 25-year monthly averages</p>
+          <p className="hidden italic opacity-80 sm:block">NASA POWER · {clima ? resumenPeriodo(clima.periodo) : "long-term monthly averages"}</p>
         </div>
       </header>
-      <div className="bg-black px-4 py-1.5 text-lg font-bold text-white sm:text-2xl">
+      <div className="bg-black px-4 py-1.5 text-base font-bold text-white sm:text-2xl">
         Field Shift: Adapting Farms with NASA Data
       </div>
 
       <div className="flex flex-1 flex-col md:min-h-0 md:flex-row">
         {/* ── Barra lateral ─────────────────────────────────────── */}
-        <nav className="flex shrink-0 flex-col gap-1 overflow-y-auto p-3 text-white md:w-56" style={{ background: COLOR.navy2 }}>
+        <nav className="flex shrink-0 flex-col gap-1 p-2 text-white md:w-56 md:overflow-y-auto md:p-3" style={{ background: COLOR.navy2 }}>
+          {/* En el celular estas vistas se muestran como pestañas arriba del panel (ver <aside>). */}
+          <div className="hidden flex-col gap-1 md:flex">
           {VISTAS.map((v) => (
             <button
               key={v.id}
               onClick={() => setVista(v.id)}
-              className={`flex items-center gap-3 rounded-md px-3 py-2 text-left text-lg ${
+              className={`flex shrink-0 items-center gap-2 rounded-md px-3 py-2 text-left text-sm md:gap-3 md:text-lg ${
                 vista === v.id ? "bg-[#b3151c]" : "hover:bg-white/10"
               }`}
               aria-current={vista === v.id}
@@ -307,12 +284,16 @@ export default function MapaCampo() {
               <span aria-hidden>{v.icono}</span>
               <span>
                 {v.nombre}
-                {v.sub && <span className="block text-xs italic opacity-80">{v.sub}</span>}
+                {v.sub && <span className="hidden text-xs italic opacity-80 md:block">{v.sub}</span>}
               </span>
             </button>
           ))}
+          </div>
 
-          <div className="my-2 border-t border-white/20" />
+          <div className="my-2 hidden border-t border-white/20 md:block" />
+          {/* En el celular: modo de cultivo y región lado a lado. */}
+          <div className="grid grid-cols-2 gap-2 md:block">
+          <div>
           <p className="text-sm font-bold">Farming Mode</p>
           <div className="grid grid-cols-2 gap-1">
             <BotonLateral
@@ -334,8 +315,10 @@ export default function MapaCampo() {
               Rainfed
             </BotonLateral>
           </div>
+          </div>
 
-          <label className="mt-2 text-sm font-bold" htmlFor="region">
+          <div className="flex min-w-0 flex-col gap-1 md:mt-2">
+          <label className="text-sm font-bold" htmlFor="region">
             Sonora region
           </label>
           <select
@@ -345,7 +328,7 @@ export default function MapaCampo() {
               const r = REGIONES.find((x) => x.nombre === e.target.value);
               if (r) irA({ nombre: r.nombre, lat: r.lat, lon: r.lon });
             }}
-            className="rounded-md bg-white/10 px-2 py-1.5 text-sm text-white outline-none ring-1 ring-white/30 focus:ring-white"
+            className="w-full min-w-0 rounded-md bg-white/10 px-2 py-1.5 text-sm text-white outline-none ring-1 ring-white/30 focus:ring-white"
           >
             {!REGIONES.some((r) => r.nombre === punto.nombre) && (
               <option value="" className="text-gray-900">
@@ -358,7 +341,11 @@ export default function MapaCampo() {
               </option>
             ))}
           </select>
+          </div>
+          </div>
 
+          {/* Fuentes, leyenda y aviso: sólo en pantallas grandes, para no empujar el mapa hacia abajo. */}
+          <div className="hidden md:block">
           <div className="my-2 border-t border-white/20" />
           <p className="font-bold">Data Sources</p>
           {[
@@ -398,18 +385,19 @@ export default function MapaCampo() {
               </div>
             </div>
           )}
+          </div>
         </nav>
 
         {/* ── Mapa ──────────────────────────────────────────────── */}
-        <div className="relative flex-1" style={{ position: "relative", flex: 1, minHeight: "45vh" }}>
+        <div className="relative min-h-[55svh] flex-1 md:min-h-[45vh]">
           <div ref={divRef} style={{ position: "absolute", inset: 0 }} />
 
-          <div className="absolute left-12 right-3 top-2 flex flex-wrap gap-2">
+          <div className="absolute left-2 right-2 top-2 flex gap-2 overflow-x-auto pb-1 md:left-12 md:right-3 md:flex-wrap md:overflow-visible md:pb-0">
             {(Object.keys(CAPAS_NASA) as CapaNasa[]).map((c) => (
               <button
                 key={c}
                 onClick={() => setCapa(c)}
-                className={`rounded-full px-3 py-1 text-sm font-semibold shadow ${
+                className={`shrink-0 whitespace-nowrap rounded-full px-3 py-1 text-sm font-semibold shadow ${
                   capa === c ? "bg-[#b3151c] text-white" : "bg-white text-gray-900 hover:bg-gray-100"
                 }`}
               >
@@ -417,7 +405,7 @@ export default function MapaCampo() {
               </button>
             ))}
             {capa !== "ninguna" && (
-              <label className="flex items-center gap-1 rounded-full bg-white px-3 py-1 text-sm font-semibold shadow">
+              <label className="flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full bg-white px-3 py-1 text-sm font-semibold shadow">
                 Image date
                 <input
                   type="date"
@@ -429,17 +417,40 @@ export default function MapaCampo() {
                 />
               </label>
             )}
-            <button onClick={miUbicacion} className="ml-auto rounded-full bg-white px-3 py-1 text-sm font-semibold shadow hover:bg-gray-100">
-              📍 My location
+            <button
+              onClick={miUbicacion}
+              disabled={ubicando}
+              className="ml-auto hidden shrink-0 rounded-full bg-white px-3 py-1 text-sm font-semibold shadow hover:bg-gray-100 md:inline-block"
+            >
+              {ubicando ? "⏳ Locating…" : "📍 My location"}
             </button>
           </div>
 
-          <div className="absolute bottom-8 left-3 rounded bg-white px-3 py-1 text-sm font-bold shadow">
+          {/* Botón grande y flotante de "mi ubicación" para el celular. */}
+          <button
+            onClick={miUbicacion}
+            disabled={ubicando}
+            aria-label="My location"
+            className="absolute bottom-[13rem] right-3 z-10 grid h-11 w-11 place-items-center rounded-full bg-white text-xl shadow-lg active:bg-gray-100 md:hidden"
+          >
+            {ubicando ? "⏳" : "📍"}
+          </button>
+
+          {avisoUbicacion && (
+            <button
+              onClick={() => setAvisoUbicacion(null)}
+              className="absolute left-1/2 top-14 z-20 w-[min(22rem,calc(100%-1.5rem))] -translate-x-1/2 rounded-lg bg-gray-900/90 px-3 py-2 text-left text-sm text-white shadow-lg"
+            >
+              {avisoUbicacion} <span className="opacity-70">(tap to close)</span>
+            </button>
+          )}
+
+          <div className="absolute bottom-8 left-3 hidden rounded bg-white px-3 py-1 text-sm font-bold shadow md:block">
             Lat: {punto.lat.toFixed(2)} · Lon: {punto.lon.toFixed(2)}
           </div>
 
           {capa === "color" && (
-            <div className="absolute bottom-8 right-3 w-60 rounded-lg bg-white px-3 py-2 text-xs shadow">
+            <div className="absolute bottom-3 left-3 right-3 rounded-lg md:bottom-8 md:left-auto md:w-60 bg-white px-3 py-2 text-xs shadow">
               <p className="font-bold">🛰️ Satellite image</p>
               {imagenHls === undefined && <p className="text-gray-600">Looking for a 30 m image…</p>}
               {imagenHls && (
@@ -455,7 +466,7 @@ export default function MapaCampo() {
           )}
 
           {capa === "ndvi" && (
-            <div className="absolute bottom-8 right-3 w-56 rounded-lg bg-white px-3 py-2 text-xs shadow">
+            <div className="absolute bottom-3 left-3 right-3 rounded-lg md:bottom-8 md:left-auto md:w-56 bg-white px-3 py-2 text-xs shadow">
               <p className="font-bold">Vegetation health (NDVI, MODIS 8-day)</p>
               <div className="mt-1 h-2.5 rounded" style={{ background: "linear-gradient(90deg,#c9b38a,#e8e3a0,#9ccc65,#2e7d32,#0b4f1a)" }} />
               <div className="flex justify-between text-gray-600">
@@ -469,8 +480,30 @@ export default function MapaCampo() {
 
         {/* ── Panel derecho ─────────────────────────────────────── */}
         <aside className="flex w-full shrink-0 flex-col gap-3 overflow-y-auto p-3 md:w-[440px]">
+          {/* Pestañas de vistas sólo en el celular, justo arriba del título del panel.
+              Se quedan pegadas arriba al bajar por el panel. */}
+          <div
+            className="sticky top-0 z-10 -mx-3 -mt-3 grid grid-cols-4 gap-1 p-2 shadow md:hidden"
+            style={{ background: COLOR.navy2 }}
+            role="tablist"
+          >
+            {VISTAS.map((v) => (
+              <button
+                key={v.id}
+                onClick={() => setVista(v.id)}
+                role="tab"
+                aria-selected={vista === v.id}
+                className={`flex flex-col items-center gap-0.5 rounded-md px-1 py-1.5 text-[11px] font-semibold leading-tight text-white ${
+                  vista === v.id ? "bg-[#b3151c]" : "active:bg-white/10"
+                }`}
+              >
+                <span aria-hidden className="text-lg leading-none">{v.icono}</span>
+                {v.nombre}
+              </button>
+            ))}
+          </div>
           <div className="flex items-center justify-between gap-2">
-            <h2 className="text-2xl font-bold">
+            <h2 className="text-xl font-bold md:text-2xl">
               {vistaActual.nombre} — {region}
             </h2>
             <span
@@ -498,7 +531,8 @@ export default function MapaCampo() {
       </div>
 
       <style>{`.campo{border:1px solid #9ca3af;border-radius:4px;padding:2px 6px;background:#fff}
-        .ol-zoom{top:auto;bottom:6.5rem;left:auto;right:.75rem}`}</style>
+        .ol-zoom{top:auto;bottom:6.5rem;left:auto;right:.75rem}
+        @media (max-width:767px){.ol-zoom{bottom:7.5rem}.ol-zoom button{width:2.25rem;height:2.25rem;font-size:1.25rem}}`}</style>
     </div>
   );
 }

@@ -65,7 +65,7 @@ export function PanelSuelo({ clima, mes }: { clima: Clima; mes: number }) {
           </div>
           <div className="flex items-center gap-2 pl-3">
             <span className="text-2xl" aria-hidden>🌡️</span>
-            <Dato etiqueta="Soil surface temp." valor={`${ahora.tSuperficie.toFixed(0)} °C`} />
+            <Dato etiqueta="Land surface temp." valor={`${ahora.tSuperficie.toFixed(0)} °C`} />
           </div>
         </div>
       </Tarjeta>
@@ -137,7 +137,7 @@ export function PanelTemperatura({ clima, mes }: { clima: Clima; mes: number }) 
           ❄️ <b>Frost months:</b> {lista(heladas)}
         </p>
         <p className="mt-1 text-sm">
-          🔥 <b>Days above 38 °C:</b> {lista(extremos)}
+          🔥 <b>Months reaching 38 °C:</b> {lista(extremos)}
         </p>
       </Tarjeta>
 
