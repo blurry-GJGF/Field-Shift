@@ -1,39 +1,40 @@
 # Field-Shift
-NASA Space apps challenge 2026. Field Shift.
+NASA Space Apps Challenge 2026 · **Field Shift: Adapting Farms with NASA Data**
 
-## Cómo ejecutarlo
+Field Shift uses 25 years of NASA climate data for any field on Earth to tell a farmer, in plain language, **which crop to plant next, when, and why**.
 
-## Getting Started
+- 🌐 **Live app:** https://field-shift-omega.vercel.app
+- 📘 **For judges, how the recommendation algorithm works:** [ALGORITHM.md](ALGORITHM.md)
+
+## What it does
+1. Pick your field on the map (or one of Sonora's main agricultural regions).
+2. Answer 4 quick questions: what you just harvested, how many times you can water, what matters most to you, and any crops you can't plant.
+3. Get a ranked list of 10 crops, with the best pick, a 12-month planting calendar, and the reasons and risks behind each option.
+
+**NASA data used:**
+- **NASA POWER:** temperature, precipitation, soil wetness and surface temperature.
+- **NASA GIBS:** HLS 30 m imagery, MODIS true color and MODIS NDVI.
+
+## How to run it
 
 First, run the development server:
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+To open the app from another device on your network over HTTPS (needed for "My location" on phones):
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm run dev:https
+```
 
-## Learn More
+## Deployment
+- **Vercel** (recommended): every push to `main` deploys https://field-shift-omega.vercel.app automatically.
+- **GitHub Pages**: [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) builds a static export with base path `/Field-Shift`. Some Mexican networks block GitHub Pages servers, so use the Vercel link for demos.
 
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Tech
+Next.js · React · OpenLayers · plain JavaScript for the algorithm ([`lib/ranking.js`](lib/ranking.js)). No server and no API keys: everything runs in the browser against public NASA APIs.
